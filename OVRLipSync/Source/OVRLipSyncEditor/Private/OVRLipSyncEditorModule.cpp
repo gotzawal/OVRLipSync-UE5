@@ -44,45 +44,69 @@ constexpr auto LipSyncSequenceUpateFrequency = 100;
 constexpr auto LipSyncSequenceDuration = 1.0f / LipSyncSequenceUpateFrequency;
 
 // Decompresses SoundWave object by initializing RawPCM data
-bool DecompressSoundWave(USoundWave *SoundWave)
+bool DecompressSoundWave(USoundWave* SoundWave)
 {
 	if (!SoundWave)
-	{
-		return false; //Checks if the SoundWave obj is valid
-	}
-
-	if (SoundWave->GetResourceSize()>0)
-	{
-		return true; //If its already initialized, just return true
-	}
-
-	auto AudioDevice = GEngine->GetMainAudioDevice();
-	
-	if (!AudioDevice)
-	{
 		return false;
+
+	// Already have PCM
+	if (SoundWave->RawPCMData && SoundWave->RawPCMDataSize > 0)
+		return true;
+
+#if WITH_EDITOR
+	// Editor-only: pull PCM from the imported asset
+	TArray<uint8> ImportedPCM;
+	uint32 SampleRate = 0;
+	uint16 NumChannels = 0;
+
+	if (SoundWave->GetImportedSoundWaveData(ImportedPCM, SampleRate, NumChannels))
+	{
+		// Allocate and copy into RawPCMData so the rest of your code works unchanged
+		SoundWave->RawPCMDataSize = ImportedPCM.Num();
+		SoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(SoundWave->RawPCMDataSize));
+		FMemory::Memcpy(SoundWave->RawPCMData, ImportedPCM.GetData(), SoundWave->RawPCMDataSize);
+
+		// Make sure metadata matches
+		SoundWave->NumChannels = NumChannels;
+		SoundWave->SetSampleRate(SampleRate, /*bFromDecoders=*/true);
+
+		return true;
 	}
+#endif
 
-	FName RuntimeFormat = SoundWave->GetRuntimeFormat();
-
-	return SoundWave->InitAudioResource((RuntimeFormat));
+	UE_LOG(LogTemp, Error, TEXT("Failed to get imported PCM data for %s"), *SoundWave->GetName());
+	return false;
 }
 
 bool OVRLipSyncProcessSoundWave(const FAssetData &SoundWaveAsset, bool UseOfflineModel = false)
 {
 	auto ObjectPath = SoundWaveAsset.GetObjectPathString();
-	auto SoundWave = FindObject<USoundWave>(NULL, *ObjectPath);
+	USoundWave* SoundWave = LoadObject<USoundWave>(nullptr, *ObjectPath);
 	if (!SoundWave)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Can't find %s"), *ObjectPath);
 		return false;
 	}
+
 	if (SoundWave->NumChannels > 2)
 	{
 		UE_LOG(LogTemp, Error, TEXT("Can't process %s: only mono and stereo streams are supported"), *ObjectPath);
 		return false;
 	}
-	DecompressSoundWave(SoundWave);
+
+	// Attempt to decompress/init PCM data
+	if (!DecompressSoundWave(SoundWave))
+	{
+		UE_LOG(LogTemp, Error, TEXT("Failed to decompress SoundWave %s"), *ObjectPath);
+		return false;
+	}
+
+	// Defensive checks: make sure RawPCMData is present and sized
+	if (SoundWave->RawPCMData == nullptr || SoundWave->RawPCMDataSize <= 0)
+	{
+		UE_LOG(LogTemp, Error, TEXT("SoundWave %s has no RawPCMData after decompression"), *ObjectPath);
+		return false;
+	}
 
 	auto SequenceName = FString::Printf(TEXT("%s_LipSyncSequence"), *SoundWaveAsset.AssetName.ToString());
 	auto SequencePath = FString::Printf(TEXT("%s_LipSyncSequence"), *SoundWaveAsset.PackageName.ToString());
