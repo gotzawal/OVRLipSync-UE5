@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include "GameFramework/Actor.h"
 #include "OVRLipSyncActorComponentBase.h"
 #include "OVRLipSyncLiveActorComponent.generated.h"
 
