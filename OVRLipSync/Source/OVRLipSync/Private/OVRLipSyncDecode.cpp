@@ -107,10 +107,10 @@ USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, in
 		return nullptr;
 	}
 
-	// Validate bits per sample
-	if (BitsPerSample != 16)
+	// Validate bits per sample (support 8, 16, 24, 32 bit)
+	if (BitsPerSample != 8 && BitsPerSample != 16 && BitsPerSample != 24 && BitsPerSample != 32)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Only 16-bit audio is supported (bits per sample: %d)"), BitsPerSample);
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Unsupported bits per sample: %d (supported: 8, 16, 24, 32)"), BitsPerSample);
 		return nullptr;
 	}
 
@@ -142,8 +142,8 @@ USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, in
 		return nullptr;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: WAV parsed - SampleRate: %d, Channels: %d, DataSize: %d bytes"),
-		WavSampleRate, WavNumChannels, DataSize);
+	UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: WAV parsed - SampleRate: %d, Channels: %d, BitsPerSample: %d, DataSize: %d bytes"),
+		WavSampleRate, WavNumChannels, BitsPerSample, DataSize);
 
 	// Create a new SoundWave object
 	USoundWave* SoundWave = NewObject<USoundWave>(GetTransientPackage(), NAME_None, RF_Public);
@@ -153,16 +153,65 @@ USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, in
 		return nullptr;
 	}
 
-	// Set up the sound wave properties using values from WAV file
+	// Calculate number of samples
+	int32 BytesPerSample = BitsPerSample / 8;
+	int32 NumSamples = DataSize / BytesPerSample;
+
+	// Unreal Engine uses 16-bit PCM, so convert if necessary
+	int32 PCMDataSize16bit = NumSamples * sizeof(int16_t);
+	int16_t* PCMData16bit = static_cast<int16_t*>(FMemory::Malloc(PCMDataSize16bit));
+
+	// Convert to 16-bit PCM based on source bit depth
+	if (BitsPerSample == 16)
+	{
+		// Already 16-bit, just copy
+		FMemory::Memcpy(PCMData16bit, &DecodedData[DataStart], DataSize);
+	}
+	else if (BitsPerSample == 8)
+	{
+		// Convert 8-bit unsigned to 16-bit signed
+		uint8* SourceData = &DecodedData[DataStart];
+		for (int32 i = 0; i < NumSamples; ++i)
+		{
+			// 8-bit is unsigned (0-255), convert to signed 16-bit (-32768 to 32767)
+			PCMData16bit[i] = (static_cast<int16_t>(SourceData[i]) - 128) * 256;
+		}
+	}
+	else if (BitsPerSample == 24)
+	{
+		// Convert 24-bit signed to 16-bit signed
+		uint8* SourceData = &DecodedData[DataStart];
+		for (int32 i = 0; i < NumSamples; ++i)
+		{
+			// Read 24-bit sample (little-endian)
+			int32 Sample24 = (SourceData[i * 3 + 2] << 16) | (SourceData[i * 3 + 1] << 8) | SourceData[i * 3];
+			// Sign extend from 24-bit to 32-bit
+			if (Sample24 & 0x800000)
+				Sample24 |= 0xFF000000;
+			// Convert to 16-bit by taking the upper 16 bits
+			PCMData16bit[i] = static_cast<int16_t>(Sample24 >> 8);
+		}
+	}
+	else if (BitsPerSample == 32)
+	{
+		// Convert 32-bit signed to 16-bit signed
+		int32* SourceData = reinterpret_cast<int32*>(&DecodedData[DataStart]);
+		for (int32 i = 0; i < NumSamples; ++i)
+		{
+			// Convert to 16-bit by taking the upper 16 bits
+			PCMData16bit[i] = static_cast<int16_t>(SourceData[i] >> 16);
+		}
+	}
+
+	// Set up the sound wave properties
 	SoundWave->SetSampleRate(WavSampleRate);
 	SoundWave->NumChannels = WavNumChannels;
-	SoundWave->Duration = (float)DataSize / (sizeof(int16_t) * WavNumChannels * WavSampleRate);
-	SoundWave->RawPCMDataSize = DataSize;
+	SoundWave->Duration = (float)NumSamples / (WavNumChannels * WavSampleRate);
+	SoundWave->RawPCMDataSize = PCMDataSize16bit;
 	SoundWave->SoundGroup = SOUNDGROUP_Default;
 
-	// Allocate and copy PCM data (only the actual audio data, not the WAV header)
-	SoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(DataSize));
-	FMemory::Memcpy(SoundWave->RawPCMData, &DecodedData[DataStart], DataSize);
+	// Assign the converted PCM data
+	SoundWave->RawPCMData = reinterpret_cast<uint8*>(PCMData16bit);
 
 	return SoundWave;
 }
