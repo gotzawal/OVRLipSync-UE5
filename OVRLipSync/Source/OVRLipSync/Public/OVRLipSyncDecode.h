@@ -38,12 +38,12 @@ public:
 	/**
 	 * Converts a Base64 encoded string to a USoundWave object
 	 * @param Base64String - The base64 encoded audio data
-	 * @param SampleRate - Sample rate of the audio (default: 44100)
-	 * @param NumChannels - Number of audio channels (default: 1 for mono)
+	 * @param TargetSampleRate - Target sample rate (0 = use WAV file's sample rate, default: 0)
+	 * @param TargetBitrate - Target bitrate in bps (0 = use WAV file's bitrate, default: 0)
 	 * @return A new USoundWave object or nullptr if conversion fails
 	 */
 	UFUNCTION(BlueprintCallable, Category = "OVRLipSync")
-	static USoundWave* Base64ToSoundWave(const FString& Base64String, int32 SampleRate = 44100, int32 NumChannels = 1);
+	static USoundWave* Base64ToSoundWave(const FString& Base64String, int32 TargetSampleRate = 0, int32 TargetBitrate = 0);
 
 	/**
 	 * Generates a LipSync sequence from a SoundWave at runtime
@@ -61,4 +61,15 @@ private:
 	 * @return true if decompression was successful, false otherwise
 	 */
 	static bool DecompressSoundWave(USoundWave* SoundWave);
+
+	/**
+	 * Simple resampling using linear interpolation
+	 * @param SourceData - Source PCM data (16-bit)
+	 * @param SourceSamples - Number of samples in source
+	 * @param SourceSampleRate - Source sample rate
+	 * @param TargetSampleRate - Target sample rate
+	 * @param NumChannels - Number of channels
+	 * @return Resampled PCM data
+	 */
+	static TArray<int16> ResampleAudio(const int16* SourceData, int32 SourceSamples, int32 SourceSampleRate, int32 TargetSampleRate, int32 NumChannels);
 };

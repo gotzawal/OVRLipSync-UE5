@@ -33,7 +33,53 @@ constexpr auto LipSyncSequenceUpateFrequency = 100;
 constexpr auto LipSyncSequenceDuration = 1.0f / LipSyncSequenceUpateFrequency;
 }
 
-USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, int32 SampleRate, int32 NumChannels)
+TArray<int16> UOVRLipSyncDecode::ResampleAudio(const int16* SourceData, int32 SourceSamples, int32 SourceSampleRate, int32 TargetSampleRate, int32 NumChannels)
+{
+	TArray<int16> ResampledData;
+
+	if (SourceSampleRate == TargetSampleRate)
+	{
+		// No resampling needed
+		ResampledData.SetNum(SourceSamples);
+		FMemory::Memcpy(ResampledData.GetData(), SourceData, SourceSamples * sizeof(int16));
+		return ResampledData;
+	}
+
+	// Calculate target number of samples
+	float ResampleRatio = (float)TargetSampleRate / (float)SourceSampleRate;
+	int32 SourceFrames = SourceSamples / NumChannels;
+	int32 TargetFrames = FMath::CeilToInt(SourceFrames * ResampleRatio);
+	int32 TargetSamples = TargetFrames * NumChannels;
+
+	ResampledData.SetNum(TargetSamples);
+
+	// Simple linear interpolation resampling
+	for (int32 TargetFrame = 0; TargetFrame < TargetFrames; ++TargetFrame)
+	{
+		float SourceFrameFloat = TargetFrame / ResampleRatio;
+		int32 SourceFrame0 = FMath::FloorToInt(SourceFrameFloat);
+		int32 SourceFrame1 = FMath::Min(SourceFrame0 + 1, SourceFrames - 1);
+		float Fraction = SourceFrameFloat - SourceFrame0;
+
+		for (int32 Channel = 0; Channel < NumChannels; ++Channel)
+		{
+			int32 SourceIdx0 = SourceFrame0 * NumChannels + Channel;
+			int32 SourceIdx1 = SourceFrame1 * NumChannels + Channel;
+			int32 TargetIdx = TargetFrame * NumChannels + Channel;
+
+			// Linear interpolation
+			float Sample0 = SourceData[SourceIdx0];
+			float Sample1 = SourceData[SourceIdx1];
+			float InterpolatedSample = Sample0 + (Sample1 - Sample0) * Fraction;
+
+			ResampledData[TargetIdx] = FMath::Clamp(FMath::RoundToInt(InterpolatedSample), -32768, 32767);
+		}
+	}
+
+	return ResampledData;
+}
+
+USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, int32 TargetSampleRate, int32 TargetBitrate)
 {
 	if (Base64String.IsEmpty())
 	{
@@ -142,8 +188,29 @@ USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, in
 		return nullptr;
 	}
 
-	UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: WAV parsed - SampleRate: %d, Channels: %d, BitsPerSample: %d, DataSize: %d bytes"),
-		WavSampleRate, WavNumChannels, BitsPerSample, DataSize);
+	// Calculate original bitrate
+	int32 OriginalBitrate = WavSampleRate * BitsPerSample * WavNumChannels;
+
+	UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: WAV parsed - SampleRate: %d, Channels: %d, BitsPerSample: %d, Bitrate: %d bps, DataSize: %d bytes"),
+		WavSampleRate, WavNumChannels, BitsPerSample, OriginalBitrate, DataSize);
+
+	// Determine final sample rate to use
+	int32 FinalSampleRate = WavSampleRate;
+
+	// If TargetBitrate is specified, calculate the required sample rate
+	if (TargetBitrate > 0)
+	{
+		// bitrate = sample_rate × 16 (output is always 16-bit) × channels
+		FinalSampleRate = TargetBitrate / (16 * WavNumChannels);
+		UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: Target bitrate %d bps specified, calculated sample rate: %d Hz"), TargetBitrate, FinalSampleRate);
+	}
+	// If TargetSampleRate is specified, use it (overrides bitrate)
+	else if (TargetSampleRate > 0)
+	{
+		FinalSampleRate = TargetSampleRate;
+		int32 FinalBitrate = FinalSampleRate * 16 * WavNumChannels;
+		UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: Target sample rate %d Hz specified, final bitrate: %d bps"), FinalSampleRate, FinalBitrate);
+	}
 
 	// Create a new SoundWave object
 	USoundWave* SoundWave = NewObject<USoundWave>(GetTransientPackage(), NAME_None, RF_Public);
@@ -203,15 +270,40 @@ USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, in
 		}
 	}
 
+	// Perform resampling if needed
+	int16_t* FinalPCMData = PCMData16bit;
+	int32 FinalPCMDataSize = PCMDataSize16bit;
+	int32 FinalNumSamples = NumSamples;
+
+	if (FinalSampleRate != WavSampleRate)
+	{
+		UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: Resampling from %d Hz to %d Hz"), WavSampleRate, FinalSampleRate);
+
+		TArray<int16> ResampledData = ResampleAudio(PCMData16bit, NumSamples, WavSampleRate, FinalSampleRate, WavNumChannels);
+
+		// Free the original PCM data
+		FMemory::Free(PCMData16bit);
+
+		// Allocate new memory for resampled data
+		FinalNumSamples = ResampledData.Num();
+		FinalPCMDataSize = FinalNumSamples * sizeof(int16);
+		FinalPCMData = static_cast<int16_t*>(FMemory::Malloc(FinalPCMDataSize));
+		FMemory::Memcpy(FinalPCMData, ResampledData.GetData(), FinalPCMDataSize);
+	}
+
 	// Set up the sound wave properties
-	SoundWave->SetSampleRate(WavSampleRate);
+	SoundWave->SetSampleRate(FinalSampleRate);
 	SoundWave->NumChannels = WavNumChannels;
-	SoundWave->Duration = (float)NumSamples / (WavNumChannels * WavSampleRate);
-	SoundWave->RawPCMDataSize = PCMDataSize16bit;
+	SoundWave->Duration = (float)FinalNumSamples / (WavNumChannels * FinalSampleRate);
+	SoundWave->RawPCMDataSize = FinalPCMDataSize;
 	SoundWave->SoundGroup = SOUNDGROUP_Default;
 
-	// Assign the converted PCM data
-	SoundWave->RawPCMData = reinterpret_cast<uint8*>(PCMData16bit);
+	// Assign the final PCM data
+	SoundWave->RawPCMData = reinterpret_cast<uint8*>(FinalPCMData);
+
+	int32 FinalBitrate = FinalSampleRate * 16 * WavNumChannels;
+	UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: Final output - SampleRate: %d Hz, Channels: %d, Bitrate: %d bps"),
+		FinalSampleRate, WavNumChannels, FinalBitrate);
 
 	return SoundWave;
 }
