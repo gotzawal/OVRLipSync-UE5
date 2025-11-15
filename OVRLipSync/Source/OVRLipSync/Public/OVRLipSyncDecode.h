@@ -25,9 +25,11 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
-#include "Sound/SoundWave.h"
-#include "OVRLipSyncFrame.h"
 #include "OVRLipSyncDecode.generated.h"
+
+// Forward declarations
+class USoundWave;
+class UOVRLipSyncFrameSequence;
 
 /**
  * Blueprint function library for runtime OVRLipSync decoding operations

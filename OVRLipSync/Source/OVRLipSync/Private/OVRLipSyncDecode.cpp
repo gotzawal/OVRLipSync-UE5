@@ -23,6 +23,7 @@
 
 #include "OVRLipSyncDecode.h"
 #include "OVRLipSyncContextWrapper.h"
+#include "OVRLipSyncFrame.h"
 #include "Misc/Base64.h"
 #include "Sound/SoundWave.h"
 
