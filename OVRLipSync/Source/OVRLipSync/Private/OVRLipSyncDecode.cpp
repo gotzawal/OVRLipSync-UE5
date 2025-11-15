@@ -271,13 +271,17 @@ bool UOVRLipSyncDecode::GenerateLipSyncSequenceRuntime(USoundWave* SoundWave, bo
 		SoundWave->NumChannels, SoundWave->GetSampleRateForCurrentPlatform(), SoundWave->RawPCMDataSize);
 
 	// Create output sequence
-	OutSequence = NewObject<UOVRLipSyncFrameSequence>(GetTransientPackage(), NAME_None, RF_Transient);
+	// Note: Using default flags instead of RF_Transient to prevent premature garbage collection
+	OutSequence = NewObject<UOVRLipSyncFrameSequence>();
 	if (!OutSequence)
 	{
 		OutErrorMessage = TEXT("Failed to create LipSync sequence object");
 		UE_LOG(LogTemp, Error, TEXT("[OVRLipSyncDecode] %s"), *OutErrorMessage);
 		return false;
 	}
+
+	// Add to root to prevent garbage collection until user explicitly manages it
+	OutSequence->AddToRoot();
 
 	// Setup processing parameters (same as editor module)
 	auto NumChannels = SoundWave->NumChannels;
@@ -351,4 +355,17 @@ bool UOVRLipSyncDecode::GenerateLipSyncSequenceRuntime(USoundWave* SoundWave, bo
 	UE_LOG(LogTemp, Log, TEXT("[OVRLipSyncDecode] LipSync sequence generation completed successfully - Total frames: %d"), ProcessedFrames);
 
 	return true;
+}
+
+void UOVRLipSyncDecode::ReleaseLipSyncSequence(UOVRLipSyncFrameSequence* Sequence)
+{
+	if (Sequence)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[OVRLipSyncDecode] Releasing LipSync sequence from root"));
+		Sequence->RemoveFromRoot();
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[OVRLipSyncDecode] Attempted to release null sequence"));
+	}
 }

@@ -53,7 +53,7 @@ public:
 	 * Generates LipSync sequence from a SoundWave at runtime
 	 * @param SoundWave - Input SoundWave to process
 	 * @param UseOfflineModel - Whether to use the offline model for higher quality
-	 * @param OutSequence - Generated LipSync frame sequence
+	 * @param OutSequence - Generated LipSync frame sequence (added to root, call ReleaseLipSyncSequence when done)
 	 * @param OutErrorMessage - Error message if generation fails
 	 * @return true if generation succeeded, false otherwise
 	 */
@@ -61,6 +61,15 @@ public:
 		meta = (DisplayName = "Generate LipSync Sequence Runtime"))
 	static bool GenerateLipSyncSequenceRuntime(USoundWave* SoundWave, bool UseOfflineModel,
 		UOVRLipSyncFrameSequence*& OutSequence, FString& OutErrorMessage);
+
+	/**
+	 * Releases a runtime-generated LipSync sequence from memory
+	 * Call this when you're done using a sequence created by GenerateLipSyncSequenceRuntime
+	 * @param Sequence - The sequence to release
+	 */
+	UFUNCTION(BlueprintCallable, Category = "OVRLipSync|Decode",
+		meta = (DisplayName = "Release LipSync Sequence"))
+	static void ReleaseLipSyncSequence(UOVRLipSyncFrameSequence* Sequence);
 
 private:
 	// Helper function to decompress SoundWave and prepare PCM data for runtime use
