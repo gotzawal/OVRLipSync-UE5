@@ -55,6 +55,96 @@ USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, in
 		return nullptr;
 	}
 
+	// Parse WAV file header
+	if (DecodedData.Num() < 44)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Data too small to be a valid WAV file (minimum 44 bytes required)"));
+		return nullptr;
+	}
+
+	// Check RIFF header
+	if (DecodedData[0] != 'R' || DecodedData[1] != 'I' || DecodedData[2] != 'F' || DecodedData[3] != 'F')
+	{
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Invalid WAV file - missing RIFF header"));
+		return nullptr;
+	}
+
+	// Check WAVE format
+	if (DecodedData[8] != 'W' || DecodedData[9] != 'A' || DecodedData[10] != 'V' || DecodedData[11] != 'E')
+	{
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Invalid WAV file - missing WAVE format"));
+		return nullptr;
+	}
+
+	// Parse fmt chunk
+	int32 FmtChunkPos = 12;
+	while (FmtChunkPos < DecodedData.Num() - 8)
+	{
+		if (DecodedData[FmtChunkPos] == 'f' && DecodedData[FmtChunkPos + 1] == 'm' &&
+			DecodedData[FmtChunkPos + 2] == 't' && DecodedData[FmtChunkPos + 3] == ' ')
+		{
+			break;
+		}
+		FmtChunkPos++;
+	}
+
+	if (FmtChunkPos >= DecodedData.Num() - 8)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Invalid WAV file - fmt chunk not found"));
+		return nullptr;
+	}
+
+	// Read fmt chunk data
+	uint16 AudioFormat = *reinterpret_cast<uint16*>(&DecodedData[FmtChunkPos + 8]);
+	uint16 WavNumChannels = *reinterpret_cast<uint16*>(&DecodedData[FmtChunkPos + 10]);
+	uint32 WavSampleRate = *reinterpret_cast<uint32*>(&DecodedData[FmtChunkPos + 12]);
+	uint16 BitsPerSample = *reinterpret_cast<uint16*>(&DecodedData[FmtChunkPos + 22]);
+
+	// Validate audio format (1 = PCM)
+	if (AudioFormat != 1)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Only PCM format is supported (format code: %d)"), AudioFormat);
+		return nullptr;
+	}
+
+	// Validate bits per sample
+	if (BitsPerSample != 16)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Only 16-bit audio is supported (bits per sample: %d)"), BitsPerSample);
+		return nullptr;
+	}
+
+	// Find data chunk
+	int32 DataChunkPos = 12;
+	while (DataChunkPos < DecodedData.Num() - 8)
+	{
+		if (DecodedData[DataChunkPos] == 'd' && DecodedData[DataChunkPos + 1] == 'a' &&
+			DecodedData[DataChunkPos + 2] == 't' && DecodedData[DataChunkPos + 3] == 'a')
+		{
+			break;
+		}
+		DataChunkPos++;
+	}
+
+	if (DataChunkPos >= DecodedData.Num() - 8)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Invalid WAV file - data chunk not found"));
+		return nullptr;
+	}
+
+	// Read data chunk size
+	uint32 DataSize = *reinterpret_cast<uint32*>(&DecodedData[DataChunkPos + 4]);
+	int32 DataStart = DataChunkPos + 8;
+
+	if (DataStart + DataSize > (uint32)DecodedData.Num())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Base64ToSoundWave: Invalid WAV file - data size exceeds file size"));
+		return nullptr;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Base64ToSoundWave: WAV parsed - SampleRate: %d, Channels: %d, DataSize: %d bytes"),
+		WavSampleRate, WavNumChannels, DataSize);
+
 	// Create a new SoundWave object
 	USoundWave* SoundWave = NewObject<USoundWave>(GetTransientPackage(), NAME_None, RF_Public);
 	if (!SoundWave)
@@ -63,16 +153,16 @@ USoundWave* UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64String, in
 		return nullptr;
 	}
 
-	// Set up the sound wave properties
-	SoundWave->SetSampleRate(SampleRate);
-	SoundWave->NumChannels = NumChannels;
-	SoundWave->Duration = (float)DecodedData.Num() / (sizeof(int16_t) * NumChannels * SampleRate);
-	SoundWave->RawPCMDataSize = DecodedData.Num();
+	// Set up the sound wave properties using values from WAV file
+	SoundWave->SetSampleRate(WavSampleRate);
+	SoundWave->NumChannels = WavNumChannels;
+	SoundWave->Duration = (float)DataSize / (sizeof(int16_t) * WavNumChannels * WavSampleRate);
+	SoundWave->RawPCMDataSize = DataSize;
 	SoundWave->SoundGroup = SOUNDGROUP_Default;
 
-	// Allocate and copy PCM data
-	SoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(DecodedData.Num()));
-	FMemory::Memcpy(SoundWave->RawPCMData, DecodedData.GetData(), DecodedData.Num());
+	// Allocate and copy PCM data (only the actual audio data, not the WAV header)
+	SoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(DataSize));
+	FMemory::Memcpy(SoundWave->RawPCMData, &DecodedData[DataStart], DataSize);
 
 	return SoundWave;
 }
