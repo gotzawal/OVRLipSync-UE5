@@ -25,6 +25,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+
 #include "OVRLipSyncDecode.generated.h"
 
 // Forward declarations
