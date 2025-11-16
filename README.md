@@ -1,7 +1,10 @@
 # OVRLipSync-UE5
 Oculus Lip Sync Plugin precompiled for Unreal 5.
   
-![LipSync Demo](https://scontent.fcpq1-1.fna.fbcdn.net/v/t39.2365-6/64637900_622042114964562_89558726775668736_n.gif?_nc_cat=105&ccb=1-7&_nc_sid=ad8a9d&_nc_ohc=hKPnmX3MZakAX-Q0OOA&_nc_ht=scontent.fcpq1-1.fna&oh=00_AfCGDS8a7l1Ffr80ubuidQhW3tJ7afrObERULATH_XNuTQ&oe=64906D40 "LipSync Demo")
+Addtional Code for runtime audio generation (hex -> sound wave) & LipSync Sequence generation.
+<img width="2147" height="254" alt="image" src="https://github.com/user-attachments/assets/437557fa-7e5c-40dc-b353-29ff4b8e6368" />
+
+
 
 As you might know, the plugin available from the link in the offical docs don't work in Unreal Engine 5. I fixed it with the help of a lot of internet strangers and compiled the plugin. Tested on Quest2/3 and Quest Pro.
 ## How to use:
