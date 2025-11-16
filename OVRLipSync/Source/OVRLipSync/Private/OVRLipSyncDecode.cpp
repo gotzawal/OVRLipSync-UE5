@@ -224,7 +224,6 @@ bool UOVRLipSyncDecode::HexToSoundWave(const FString& HexWavData, USoundWave*& O
 	for (int32 i = 0; i < HexLen; i += 2)
 	{
 		FString ByteStr = HexWavData.Mid(i, 2);
-		uint8 Byte = 0;
 
 		// Parse hex byte
         int32 HighNibble = FParse::HexDigit(ByteStr[0]);
@@ -233,7 +232,6 @@ bool UOVRLipSyncDecode::HexToSoundWave(const FString& HexWavData, USoundWave*& O
 			UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Invalid hex character at position %d: '%c'"), i, ByteStr[0]);
 			return false;
 		}
-		Byte *= 16;
 
         int32 LowNibble = FParse::HexDigit(ByteStr[1]);
         if (LowNibble == -1)
@@ -241,8 +239,8 @@ bool UOVRLipSyncDecode::HexToSoundWave(const FString& HexWavData, USoundWave*& O
 			UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Invalid hex character at position %d: '%c'"), i + 1, ByteStr[1]);
 			return false;
 		}
-		Byte += LowNibble;
 
+		uint8 Byte = (HighNibble << 4) | LowNibble;
 		WavData.Add(Byte);
 	}
 
