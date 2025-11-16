@@ -23,8 +23,8 @@
 
 #include "OVRLipSyncDecode.h"
 #include "OVRLipSyncContextWrapper.h"
-#include "Misc/Base64.h"
 #include "Sound/SoundWave.h"
+#include "Sound/SoundWaveProcedural.h"
 #include "AudioDevice.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogOVRLipSyncDecode, Log, All);
@@ -149,62 +149,6 @@ bool UOVRLipSyncDecode::ParseWavHeader(const TArray<uint8>& WavData, uint32& Out
 	return true;
 }
 
-bool UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64WavData, USoundWave*& OutSoundWave)
-{
-	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[Base64ToSoundWave] Starting conversion, Base64 string length: %d"), static_cast<int32>(Base64WavData.Len()));
-
-	// Decode Base64
-	TArray<uint8> WavData;
-	if (!FBase64::Decode(Base64WavData, WavData))
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[Base64ToSoundWave] Failed to decode Base64 data"));
-		return false;
-	}
-
-	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[Base64ToSoundWave] Base64 decoded successfully, WAV data size: %d bytes"), static_cast<int32>(WavData.Num()));
-
-	// Parse WAV header
-	uint32 SampleRate = 0;
-	uint16 NumChannels = 0;
-	uint32 PCMDataOffset = 0;
-	uint32 PCMDataSize = 0;
-
-	if (!ParseWavHeader(WavData, SampleRate, NumChannels, PCMDataOffset, PCMDataSize))
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[Base64ToSoundWave] Failed to parse WAV header"));
-		return false;
-	}
-
-	// Validate PCM data
-	if (PCMDataOffset + PCMDataSize > static_cast<uint32>(WavData.Num()))
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[Base64ToSoundWave] PCM data exceeds WAV file size"));
-		return false;
-	}
-
-	// Create SoundWave object
-	OutSoundWave = NewObject<USoundWave>();
-	if (!OutSoundWave)
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[Base64ToSoundWave] Failed to create SoundWave object"));
-		return false;
-	}
-
-	// Set SoundWave properties
-	OutSoundWave->SetSampleRate(SampleRate);
-	OutSoundWave->NumChannels = NumChannels;
-	OutSoundWave->Duration = static_cast<float>(PCMDataSize) / static_cast<float>(SampleRate * NumChannels * sizeof(int16));
-	OutSoundWave->RawPCMDataSize = PCMDataSize;
-
-	// Allocate and copy PCM data
-	OutSoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(static_cast<SIZE_T>(PCMDataSize)));
-	FMemory::Memcpy(OutSoundWave->RawPCMData, WavData.GetData() + PCMDataOffset, static_cast<SIZE_T>(PCMDataSize));
-
-	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[Base64ToSoundWave] SoundWave created successfully - Duration: %.2f seconds"), OutSoundWave->Duration);
-
-	return true;
-}
-
 bool UOVRLipSyncDecode::HexToSoundWave(const FString& HexWavData, USoundWave*& OutSoundWave)
 {
 	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[HexToSoundWave] Starting conversion, Hex string length: %d"), static_cast<int32>(HexWavData.Len()));
@@ -212,38 +156,19 @@ bool UOVRLipSyncDecode::HexToSoundWave(const FString& HexWavData, USoundWave*& O
 	// Validate hex string length (must be even)
 	if (HexWavData.Len() % 2 != 0)
 	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Invalid hex string length: %d (must be even)"), static_cast<int32>(HexWavData.Len()));
+		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Invalid hex string length (must be even): %d"), static_cast<int32>(HexWavData.Len()));
 		return false;
 	}
 
-	// Decode Hex string to bytes
+	// Convert hex string to binary data
 	TArray<uint8> WavData;
-	const int32 HexLen = HexWavData.Len();
-	WavData.Reserve(HexLen / 2);
+	const int32 DataSize = HexWavData.Len() / 2;
+	WavData.SetNum(DataSize);
 
-	for (int32 i = 0; i < HexLen; i += 2)
+	for (int32 i = 0; i < DataSize; ++i)
 	{
-		FString ByteStr = HexWavData.Mid(i, 2);
-		uint8 Byte = 0;
-
-		// Parse hex byte
-        int32 HighNibble = FParse::HexDigit(ByteStr[0]);
-        if (HighNibble == -1)
-		{
-			UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Invalid hex character at position %d: '%c'"), i, ByteStr[0]);
-			return false;
-		}
-		Byte *= 16;
-
-        int32 LowNibble = FParse::HexDigit(ByteStr[1]);
-        if (LowNibble == -1)
-		{
-			UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Invalid hex character at position %d: '%c'"), i + 1, ByteStr[1]);
-			return false;
-		}
-		Byte += LowNibble;
-
-		WavData.Add(Byte);
+		FString ByteString = HexWavData.Mid(i * 2, 2);
+		WavData[i] = static_cast<uint8>(FCString::Strtoi(*ByteString, nullptr, 16));
 	}
 
 	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[HexToSoundWave] Hex decoded successfully, WAV data size: %d bytes"), static_cast<int32>(WavData.Num()));
@@ -267,88 +192,31 @@ bool UOVRLipSyncDecode::HexToSoundWave(const FString& HexWavData, USoundWave*& O
 		return false;
 	}
 
-	// Create SoundWave object
-	OutSoundWave = NewObject<USoundWave>();
-	if (!OutSoundWave)
+	// Create USoundWaveProcedural object
+	USoundWaveProcedural* ProceduralWave = NewObject<USoundWaveProcedural>();
+	if (!ProceduralWave)
 	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Failed to create SoundWave object"));
+		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Failed to create SoundWaveProcedural object"));
 		return false;
 	}
 
 	// Set SoundWave properties
-	OutSoundWave->SetSampleRate(SampleRate);
-	OutSoundWave->NumChannels = NumChannels;
-	OutSoundWave->Duration = static_cast<float>(PCMDataSize) / static_cast<float>(SampleRate * NumChannels * sizeof(int16));
-	OutSoundWave->RawPCMDataSize = PCMDataSize;
+	ProceduralWave->SetSampleRate(SampleRate);
+	ProceduralWave->NumChannels = NumChannels;
+	ProceduralWave->Duration = static_cast<float>(PCMDataSize) / static_cast<float>(SampleRate * NumChannels * sizeof(int16));
+	ProceduralWave->SoundGroup = SOUNDGROUP_Default;
+	ProceduralWave->bLooping = false;
+	ProceduralWave->bCanProcessAsync = false;
+	
+	// Set RawPCMDataSize for Duration calculation
+	ProceduralWave->RawPCMDataSize = PCMDataSize;
 
-	// Allocate and copy PCM data
-	OutSoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(static_cast<SIZE_T>(PCMDataSize)));
-	FMemory::Memcpy(OutSoundWave->RawPCMData, WavData.GetData() + PCMDataOffset, static_cast<SIZE_T>(PCMDataSize));
+	// Queue the PCM audio data
+	ProceduralWave->QueueAudio(WavData.GetData() + PCMDataOffset, PCMDataSize);
 
-	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[HexToSoundWave] SoundWave created successfully - Duration: %.2f seconds"), OutSoundWave->Duration);
+	OutSoundWave = ProceduralWave;
 
-	return true;
-}
-
-bool UOVRLipSyncDecode::RawPCMToSoundWave(const FString& Base64PCMData, int32 SampleRate, int32 NumChannels, USoundWave*& OutSoundWave)
-{
-	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[RawPCMToSoundWave] Starting conversion - Base64 string length: %d, SampleRate: %d, Channels: %d"),
-		static_cast<int32>(Base64PCMData.Len()), SampleRate, NumChannels);
-
-	// Validate parameters
-	if (SampleRate <= 0)
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[RawPCMToSoundWave] Invalid sample rate: %d"), SampleRate);
-		return false;
-	}
-
-	if (NumChannels <= 0 || NumChannels > 2)
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[RawPCMToSoundWave] Invalid channel count: %d (must be 1 or 2)"), NumChannels);
-		return false;
-	}
-
-	// Decode Base64
-	TArray<uint8> PCMData;
-	if (!FBase64::Decode(Base64PCMData, PCMData))
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[RawPCMToSoundWave] Failed to decode Base64 data"));
-		return false;
-	}
-
-	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[RawPCMToSoundWave] Base64 decoded successfully, PCM data size: %d bytes"),
-		static_cast<int32>(PCMData.Num()));
-
-	// Validate PCM data size (must be multiple of 2 for 16-bit samples)
-	if (PCMData.Num() == 0 || PCMData.Num() % 2 != 0)
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[RawPCMToSoundWave] Invalid PCM data size: %d (must be non-zero and multiple of 2)"),
-			static_cast<int32>(PCMData.Num()));
-		return false;
-	}
-
-	uint32 PCMDataSize = static_cast<uint32>(PCMData.Num());
-
-	// Create SoundWave object
-	OutSoundWave = NewObject<USoundWave>();
-	if (!OutSoundWave)
-	{
-		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[RawPCMToSoundWave] Failed to create SoundWave object"));
-		return false;
-	}
-
-	// Set SoundWave properties
-	OutSoundWave->SetSampleRate(static_cast<uint32>(SampleRate));
-	OutSoundWave->NumChannels = static_cast<uint32>(NumChannels);
-	OutSoundWave->Duration = static_cast<float>(PCMDataSize) / static_cast<float>(SampleRate * NumChannels * sizeof(int16));
-	OutSoundWave->RawPCMDataSize = PCMDataSize;
-
-	// Allocate and copy PCM data
-	OutSoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(static_cast<SIZE_T>(PCMDataSize)));
-	FMemory::Memcpy(OutSoundWave->RawPCMData, PCMData.GetData(), static_cast<SIZE_T>(PCMDataSize));
-
-	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[RawPCMToSoundWave] SoundWave created successfully - Duration: %.2f seconds, Samples: %d"),
-		OutSoundWave->Duration, static_cast<int32>(PCMDataSize / sizeof(int16)));
+	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[HexToSoundWave] SoundWaveProcedural created successfully - Duration: %.2f seconds"), ProceduralWave->Duration);
 
 	return true;
 }
@@ -368,7 +236,7 @@ bool UOVRLipSyncDecode::DecompressSoundWaveRuntime(USoundWave* SoundWave)
 		return true;
 	}
 
-	UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[DecompressSoundWaveRuntime] SoundWave has no RawPCM data - use Base64ToSoundWave to create SoundWave with PCM data"));
+	UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[DecompressSoundWaveRuntime] SoundWave has no RawPCM data - use HexToSoundWave to create SoundWave with PCM data"));
 	return false;
 }
 
