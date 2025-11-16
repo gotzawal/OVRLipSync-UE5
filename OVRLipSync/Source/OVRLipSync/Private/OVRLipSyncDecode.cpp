@@ -195,10 +195,15 @@ bool UOVRLipSyncDecode::Base64ToSoundWave(const FString& Base64WavData, USoundWa
 	OutSoundWave->NumChannels = NumChannels;
 	OutSoundWave->Duration = static_cast<float>(PCMDataSize) / static_cast<float>(SampleRate * NumChannels * sizeof(int16));
 	OutSoundWave->RawPCMDataSize = PCMDataSize;
+	OutSoundWave->SoundGroup = SOUNDGROUP_Default;
+	OutSoundWave->bCanProcessAsync = false;
 
 	// Allocate and copy PCM data
 	OutSoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(static_cast<SIZE_T>(PCMDataSize)));
 	FMemory::Memcpy(OutSoundWave->RawPCMData, WavData.GetData() + PCMDataOffset, static_cast<SIZE_T>(PCMDataSize));
+
+	// Invalidate compressed data to force use of RawPCMData
+	OutSoundWave->InvalidateCompressedData(true, false);
 
 	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[Base64ToSoundWave] SoundWave created successfully - Duration: %.2f seconds"), OutSoundWave->Duration);
 
@@ -278,10 +283,15 @@ bool UOVRLipSyncDecode::HexToSoundWave(const FString& HexWavData, USoundWave*& O
 	OutSoundWave->NumChannels = NumChannels;
 	OutSoundWave->Duration = static_cast<float>(PCMDataSize) / static_cast<float>(SampleRate * NumChannels * sizeof(int16));
 	OutSoundWave->RawPCMDataSize = PCMDataSize;
+	OutSoundWave->SoundGroup = SOUNDGROUP_Default;
+	OutSoundWave->bCanProcessAsync = false;
 
 	// Allocate and copy PCM data
 	OutSoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(static_cast<SIZE_T>(PCMDataSize)));
 	FMemory::Memcpy(OutSoundWave->RawPCMData, WavData.GetData() + PCMDataOffset, static_cast<SIZE_T>(PCMDataSize));
+
+	// Invalidate compressed data to force use of RawPCMData
+	OutSoundWave->InvalidateCompressedData(true, false);
 
 	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[HexToSoundWave] SoundWave created successfully - Duration: %.2f seconds"), OutSoundWave->Duration);
 
@@ -340,10 +350,15 @@ bool UOVRLipSyncDecode::RawPCMToSoundWave(const FString& Base64PCMData, int32 Sa
 	OutSoundWave->NumChannels = static_cast<uint32>(NumChannels);
 	OutSoundWave->Duration = static_cast<float>(PCMDataSize) / static_cast<float>(SampleRate * NumChannels * sizeof(int16));
 	OutSoundWave->RawPCMDataSize = PCMDataSize;
+	OutSoundWave->SoundGroup = SOUNDGROUP_Default;
+	OutSoundWave->bCanProcessAsync = false;
 
 	// Allocate and copy PCM data
 	OutSoundWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(static_cast<SIZE_T>(PCMDataSize)));
 	FMemory::Memcpy(OutSoundWave->RawPCMData, PCMData.GetData(), static_cast<SIZE_T>(PCMDataSize));
+
+	// Invalidate compressed data to force use of RawPCMData
+	OutSoundWave->InvalidateCompressedData(true, false);
 
 	UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[RawPCMToSoundWave] SoundWave created successfully - Duration: %.2f seconds, Samples: %d"),
 		OutSoundWave->Duration, static_cast<int32>(PCMDataSize / sizeof(int16)));
