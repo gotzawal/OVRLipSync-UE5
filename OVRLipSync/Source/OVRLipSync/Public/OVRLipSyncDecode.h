@@ -39,15 +39,6 @@ class OVRLIPSYNC_API UOVRLipSyncDecode : public UBlueprintFunctionLibrary
 
 public:
 	/**
-	 * Converts Base64 encoded WAV data to a USoundWave object at runtime
-	 * @param Base64WavData - Base64 encoded WAV file data
-	 * @param OutSoundWave - The resulting SoundWave object
-	 * @return true if conversion was successful, false otherwise
-	 */
-	UFUNCTION(BlueprintCallable, Category = "OVRLipSync|Decode")
-	static bool Base64ToSoundWave(const FString& Base64WavData, USoundWave*& OutSoundWave);
-
-	/**
 	 * Converts Hex encoded WAV data to a USoundWave object at runtime
 	 * @param HexWavData - Hex encoded WAV file data (e.g., "52494646...")
 	 * @param OutSoundWave - The resulting SoundWave object
@@ -55,17 +46,6 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "OVRLipSync|Decode")
 	static bool HexToSoundWave(const FString& HexWavData, USoundWave*& OutSoundWave);
-
-	/**
-	 * Converts Base64 encoded RAW PCM data to a USoundWave object at runtime
-	 * @param Base64PCMData - Base64 encoded raw PCM data (no WAV header)
-	 * @param SampleRate - Sample rate of the audio (e.g., 8000, 16000, 44100, 48000)
-	 * @param NumChannels - Number of audio channels (1 = mono, 2 = stereo)
-	 * @param OutSoundWave - The resulting SoundWave object
-	 * @return true if conversion was successful, false otherwise
-	 */
-	UFUNCTION(BlueprintCallable, Category = "OVRLipSync|Decode")
-	static bool RawPCMToSoundWave(const FString& Base64PCMData, int32 SampleRate, int32 NumChannels, USoundWave*& OutSoundWave);
 
 	/**
 	 * Generates a LipSync sequence from a SoundWave at runtime
