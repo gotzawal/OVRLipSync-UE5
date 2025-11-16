@@ -207,11 +207,22 @@ bool UOVRLipSyncDecode::HexToSoundWave(const FString& HexWavData, USoundWave*& O
 	ProceduralWave->SoundGroup = SOUNDGROUP_Default;
 	ProceduralWave->bLooping = false;
 	ProceduralWave->bCanProcessAsync = false;
-	
-	// Set RawPCMDataSize for Duration calculation
-	ProceduralWave->RawPCMDataSize = PCMDataSize;
 
-	// Queue the PCM audio data
+	// Allocate and set RawPCMData for runtime lip sync processing
+	ProceduralWave->RawPCMDataSize = PCMDataSize;
+	ProceduralWave->RawPCMData = static_cast<uint8*>(FMemory::Malloc(PCMDataSize));
+	if (ProceduralWave->RawPCMData)
+	{
+		FMemory::Memcpy(ProceduralWave->RawPCMData, WavData.GetData() + PCMDataOffset, PCMDataSize);
+		UE_LOG(LogOVRLipSyncDecode, Log, TEXT("[HexToSoundWave] RawPCMData allocated and copied: %u bytes"), PCMDataSize);
+	}
+	else
+	{
+		UE_LOG(LogOVRLipSyncDecode, Error, TEXT("[HexToSoundWave] Failed to allocate RawPCMData"));
+		return false;
+	}
+
+	// Queue the PCM audio data for playback
 	ProceduralWave->QueueAudio(WavData.GetData() + PCMDataOffset, PCMDataSize);
 
 	OutSoundWave = ProceduralWave;
