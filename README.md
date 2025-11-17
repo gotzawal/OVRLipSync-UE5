@@ -1,6 +1,9 @@
 # OVRLipSync-UE5
 Oculus Lip Sync Plugin precompiled for Unreal 5.
-  
+
+https://youtu.be/clPu9RlIGuw?si=9tVsqKeNiNS2VElS
+
+
 Addtional Code for runtime audio generation (hex -> sound wave) & LipSync Sequence generation.
 <img width="2147" height="254" alt="image" src="https://github.com/user-attachments/assets/437557fa-7e5c-40dc-b353-29ff4b8e6368" />
 
